@@ -1,124 +1,96 @@
-// The game's rules and state, with no drawing and no browser in it: the player's paddle, the
-// pool of falling blocks and coins, spawning, collisions, score, lives and level. step() advances
-// one fixed step and returns what happened as bit flags, so the caller can react without the
-// world knowing about screens or sound. Nothing here allocates after createWorld returns.
-import { BLOCK, COIN, FIELD, LEVEL, LIVES, PLAYER, POOL_SIZE } from './config.js';
+// Solmar Nights — the city itself: a seeded grid of blocks, roads,
+// buildings, palms and the beach, plus the road graph traffic drives on.
+import { CFG, DISTRICTS, mulberry32 } from './config.js';
 
-export const KIND_BLOCK = 0;
-export const KIND_COIN = 1;
+export function buildCity() {
+  const rand = mulberry32(CFG.seed);
+  const blocks = [];
+  const palms = [];
+  const pickups = [];
+  const step = CFG.blockSize + CFG.roadWidth;
+  const roofs = [CFG.palette.buildingRoof, CFG.palette.buildingRoof2, CFG.palette.buildingRoof3];
 
-export const EVENT_HIT = 1;
-export const EVENT_COIN = 2;
-export const EVENT_OVER = 4;
-
-function overlaps(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
-}
-
-export function createWorld(random) {
-  const player = { x: 0, y: FIELD.groundY - PLAYER.height, width: PLAYER.width, height: PLAYER.height, invulnerable: 0 };
-  const items = [];
-  for (let index = 0; index < POOL_SIZE; index += 1) {
-    items.push({ active: false, kind: KIND_BLOCK, x: 0, y: 0, width: 0, height: 0, speed: 0 });
-  }
-  const state = { player, items, score: 0, lives: LIVES, level: 1, elapsed: 0, blockTimer: 0, coinTimer: 0 };
-
-  function reset() {
-    player.x = (FIELD.width - player.width) / 2;
-    player.invulnerable = 0;
-    for (const item of items) item.active = false;
-    state.score = 0;
-    state.lives = LIVES;
-    state.level = 1;
-    state.elapsed = 0;
-    state.blockTimer = BLOCK.interval;
-    state.coinTimer = COIN.interval;
-  }
-
-  function freeItem() {
-    for (let index = 0; index < items.length; index += 1) if (!items[index].active) return items[index];
-    return null;
-  }
-
-  function spawnBlock() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_BLOCK;
-    item.width = BLOCK.minWidth + random() * (BLOCK.maxWidth - BLOCK.minWidth);
-    item.height = BLOCK.height;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = BLOCK.speed + BLOCK.speedPerLevel * (state.level - 1) + random() * BLOCK.speedJitter;
-  }
-
-  function spawnCoin() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_COIN;
-    item.width = COIN.size;
-    item.height = COIN.size;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = COIN.speed + COIN.speedPerLevel * (state.level - 1);
-  }
-
-  function blockInterval() {
-    return Math.max(BLOCK.minInterval, BLOCK.interval * BLOCK.intervalScale ** (state.level - 1));
-  }
-
-  /**
-   * One fixed step. `direction` is -1, 0 or 1 (left, still, right). With `harmless` set (the title
-   * screen's backdrop) things fall but nothing touches the player and nothing scores.
-   */
-  function step(dt, direction, harmless) {
-    let events = 0;
-    state.elapsed += dt;
-    state.level = Math.min(LEVEL.max, 1 + Math.floor(state.elapsed / LEVEL.seconds));
-
-    player.x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * dt));
-    if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
-
-    state.blockTimer -= dt;
-    if (state.blockTimer <= 0) {
-      spawnBlock();
-      state.blockTimer += blockInterval();
-    }
-    state.coinTimer -= dt;
-    if (state.coinTimer <= 0) {
-      spawnCoin();
-      state.coinTimer += COIN.interval + random() * COIN.intervalJitter;
-    }
-
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      if (!item.active) continue;
-      item.y += item.speed * dt;
-      if (item.y > FIELD.groundY) {
-        item.active = false;
-        if (item.kind === KIND_BLOCK && !harmless) state.score += BLOCK.dodgePoints;
+  for (let by = 0; by < CFG.worldSize; by += step) {
+    for (let bx = 0; bx < CFG.worldSize; bx += step) {
+      const beach = by + CFG.blockSize > 2050;
+      if (beach) continue; // the southern strip is sand and sea
+      const kind = rand();
+      if (kind < 0.14) {
+        // A park block: grass, palms, a cash pickup.
+        const px = bx + 30 + rand() * (CFG.blockSize - 60);
+        const py = by + 30 + rand() * (CFG.blockSize - 60);
+        blocks.push({ x: bx, y: by, w: CFG.blockSize, h: CFG.blockSize, kind: 'park' });
+        for (let i = 0; i < 5; i++) {
+          palms.push({ x: bx + 25 + rand() * (CFG.blockSize - 50), y: by + 25 + rand() * (CFG.blockSize - 50) });
+        }
+        if (rand() < 0.6) pickups.push({ x: px, y: py, kind: 'cash', amount: 150 + Math.floor(rand() * 250), taken: false });
         continue;
       }
-      if (harmless || !overlaps(item, player)) continue;
-      if (item.kind === KIND_COIN) {
-        item.active = false;
-        state.score += COIN.points;
-        events |= EVENT_COIN;
-      } else if (player.invulnerable === 0) {
-        item.active = false;
-        state.lives -= 1;
-        player.invulnerable = PLAYER.invulnerable;
-        events |= EVENT_HIT;
-        if (state.lives === 0) {
-          events |= EVENT_OVER;
-          break;
-        }
+      // A built block: one or two buildings with a courtyard gap.
+      const split = rand() < 0.5;
+      const roof = roofs[Math.floor(rand() * roofs.length)];
+      if (split) {
+        const w1 = CFG.blockSize * (0.35 + rand() * 0.2);
+        blocks.push({ x: bx, y: by, w: w1, h: CFG.blockSize, kind: 'building', roof, hgt: 8 + rand() * 22 });
+        blocks.push({ x: bx + w1 + 26, y: by, w: CFG.blockSize - w1 - 26, h: CFG.blockSize, kind: 'building', roof, hgt: 8 + rand() * 22 });
+      } else {
+        blocks.push({ x: bx, y: by, w: CFG.blockSize, h: CFG.blockSize, kind: 'building', roof, hgt: 10 + rand() * 26 });
+      }
+      if (rand() < 0.35) {
+        palms.push({ x: bx + 8, y: by + 8 });
+        palms.push({ x: bx + CFG.blockSize - 8, y: by + CFG.blockSize - 8 });
       }
     }
-    return events;
   }
 
-  reset();
-  return { state, reset, step };
+  // Road centre lines, for traffic waypoints and the minimap.
+  const roadsX = [];
+  const roadsY = [];
+  for (let x = CFG.roadWidth / 2; x < CFG.worldSize; x += step) roadsX.push(x);
+  for (let y = CFG.roadWidth / 2; y < CFG.worldSize; y += step) roadsY.push(y);
+
+  // Named spots the missions use — all on road intersections, never
+  // inside a building block, so the player can always stand on them.
+  const spots = {
+    safehouse: { x: 316, y: 600, label: 'Safehouse' },
+    marina: { x: 300, y: 2250, label: 'Marina Bay' },
+    bank: { x: 1452, y: 316, label: 'Solmar Bank' },
+    garage: { x: 2020, y: 1452, label: 'Rico\u2019s Garage' },
+    market: { x: 600, y: 1452, label: 'Old Market' },
+    pier: { x: 1250, y: 2400, label: 'Sunset Pier' },
+  };
+
+  return { blocks, palms, pickups, roadsX, roadsY, spots };
+}
+
+// True when a point is inside a building (solid) or outside the city.
+export function hitsBuilding(city, x, y, pad) {
+  if (x < 0 || y < 0 || x > CFG.worldSize || y > CFG.worldSize) return true;
+  for (const b of city.blocks) {
+    if (b.kind !== 'building') continue;
+    if (x > b.x - pad && x < b.x + b.w + pad && y > b.y - pad && y < b.y + b.h + pad) return true;
+  }
+  return false;
+}
+
+// Nearest point on a road centre line, used to keep traffic on the streets.
+export function nearestRoadPoint(city, x, y) {
+  let best = null;
+  let bestD = Infinity;
+  for (const rx of city.roadsX) {
+    const d = Math.abs(x - rx);
+    if (d < bestD) { bestD = d; best = { x: rx, y, axis: 'x' }; }
+  }
+  for (const ry of city.roadsY) {
+    const d = Math.abs(y - ry);
+    if (d < bestD) { bestD = d; best = { x, y: ry, axis: 'y' }; }
+  }
+  return best;
+}
+
+export function districtAt(x, y) {
+  for (const d of DISTRICTS) {
+    if (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) return d.name;
+  }
+  return 'Solmar';
 }

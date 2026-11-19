@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solmar Nights — an open-world crime story</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #14101c; height: 100%; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; font-family: sans-serif; }
+  #game { display: block; width: 1280px; height: 800px; max-width: 100vw; max-height: 100vh; background: #1c2430; }
+</style>
+</head>
+<body>
+<canvas id="game" width="1280" height="800"></canvas>
+<script type="module">
+  import { Game } from './src/main.js';
+  const game = new Game(document.getElementById('game'));
+  window.__solmar = game;
+</script>
+</body>
+</html>

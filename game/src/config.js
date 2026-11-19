@@ -1,61 +1,103 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
+// Solmar Nights — configuration: every tuning number for the city, the
+// vehicles, the police and the missions lives here so the rest of the game
+// reads plain values instead of magic numbers.
+export const CFG = {
+  // World: a coastal city of square blocks separated by roads.
+  worldSize: 2600,
+  blockSize: 220,
+  roadWidth: 64,
+  seed: 20261119,
 
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
+  // Player on foot.
+  walkSpeed: 165,
+  runSpeed: 265,
+  playerRadius: 13,
+  playerHealth: 100,
 
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
-export const STEP = 1 / 60;
+  // Driving.
+  carAccel: 520,
+  carBrake: 700,
+  carMaxSpeed: 430,
+  carReverseSpeed: 150,
+  carTurn: 2.6,
+  carRadius: 20,
 
-export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
+  // Traffic and crowds.
+  trafficCars: 26,
+  pedestrians: 42,
+  maxPolice: 6,
+
+  // Wanted system: 0 calm, 5 the whole city on your tail.
+  wantedDecayMs: 14000,
+  policeSpawnMs: 2600,
+
+  // Combat.
+  bulletSpeed: 720,
+  bulletDamage: 34,
+  fireCooldownMs: 240,
+  pistolAmmo: 60,
+
+  // Camera and view.
+  viewWidth: 1280,
+  viewHeight: 800,
+  minimapSize: 168,
+
+  // Colours of a sun-soaked coastal city.
+  palette: {
+    grass: '#7fae5a',
+    sand: '#e8d29a',
+    sea: '#2f8fb5',
+    road: '#3d3a38',
+    roadLine: '#e8d44f',
+    sidewalk: '#b9b2a4',
+    buildingRoof: '#c96f4a',
+    buildingRoof2: '#4a7a96',
+    buildingRoof3: '#d9a441',
+    palm: '#3f8f4f',
+    hudBg: 'rgba(12, 14, 20, 0.72)',
+    hudText: '#f5f1e6',
+    accent: '#ffb02e',
+    danger: '#ff4d4d',
+  },
 };
 
-export const LIVES = 3;
+// District names paint the minimap and the mission text.
+export const DISTRICTS = [
+  { name: 'Marina Bay', x: 0, y: 2000, w: 1300, h: 600 },
+  { name: 'Old Town', x: 0, y: 0, w: 900, h: 1000 },
+  { name: 'Downtown', x: 900, y: 0, w: 900, h: 1100 },
+  { name: 'Palm Heights', x: 1800, y: 0, w: 800, h: 1300 },
+  { name: 'Harbor Row', x: 1300, y: 2000, w: 1300, h: 600 },
+];
 
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
-};
+// Small deterministic random helper, so the city is the same every load.
+export function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
-};
+export function clamp(value, min, max) {
+  return value < min ? min : value > max ? max : value;
+}
 
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
+export function dist(ax, ay, bx, by) {
+  return Math.hypot(ax - bx, ay - by);
+}
 
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
+export function angleTo(ax, ay, bx, by) {
+  return Math.atan2(by - ay, bx - ax);
+}
 
-export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
-};
-
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';
+// Shortest signed turn from angle a toward angle b.
+export function turnToward(a, b, maxStep) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + clamp(d, -maxStep, maxStep);
+}
